@@ -1,21 +1,23 @@
+import OpenAI from "openai";
 import { weatherTools, weatherImpls } from "./_shared/tools.js";
-import { makeClient } from "./_shared/client.js";
 
 export type RunCtx = { log: (line: string) => void; signal?: AbortSignal };
 
-export async function run({ log }: RunCtx) {
-  const { client, model, label } = makeClient();
-  log(`\x1b[2m[provider] ${label} · model=${model}\x1b[0m`);
+const client = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY ?? "",
+  baseURL: "https://api.deepseek.com/v1",
+});
 
+export async function run({ log }: RunCtx) {
   const userMessage = "北京和上海今天天气怎么样？";
   log(`\x1b[36m[user]\x1b[0m ${userMessage}\n`);
 
   const messages: any[] = [{ role: "user", content: userMessage }];
 
   while (true) {
-    log(`\x1b[33m[step]\x1b[0m 调用 ${model} ...`);
+    log(`\x1b[33m[step]\x1b[0m 调用 deepseek-chat ...`);
     const resp = await client.chat.completions.create({
-      model,
+      model: "deepseek-chat",
       messages,
       tools: weatherTools,
     });

@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 import { weatherTools, weatherImpls } from "./_shared/tools.js";
-import { makeClient } from "./_shared/client.js";
 
 export type RunCtx = { log: (line: string) => void; signal?: AbortSignal };
 
@@ -135,19 +134,25 @@ async function runAgent(provider: LLMProvider, providerLabel: string, userMessag
 }
 
 export async function run({ log, signal }: RunCtx) {
-  log(`\x1b[2m[demo] 同一个主循环跑通"内部消息格式"，第一次走 OpenAIProvider，第二次走原生 Anthropic SDK，看输出对比。\x1b[0m\n`);
+  log(`\x1b[2m[demo] 用同一个主循环跑 DeepSeek（OpenAI 协议）。如果服务端配了 ANTHROPIC_API_KEY，也会顺序跑一遍 Claude，对比输出。\x1b[0m\n`);
 
-  const { client, model, label } = makeClient();
-  const openaiCompat = new OpenAIProvider(client, model);
-  await runAgent(openaiCompat, label, "北京今天天气怎么样？", log, signal);
+  const deepseek = new OpenAIProvider(
+    new OpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY ?? "",
+      baseURL: "https://api.deepseek.com/v1",
+    }),
+    "deepseek-chat"
+  );
+
+  await runAgent(deepseek, "deepseek-chat", "北京今天天气怎么样？", log, signal);
 
   if (process.env.ANTHROPIC_API_KEY) {
-    log(`\x1b[2m─── 切到原生 Anthropic SDK Provider ───\x1b[0m`);
+    log(`\x1b[2m─── 切到 Anthropic Provider ───\x1b[0m`);
     const { AnthropicProvider } = await import("./_shared/anthropic-provider.js");
-    const claude = new AnthropicProvider(process.env.ANTHROPIC_API_KEY, "claude-haiku-4-5");
-    await runAgent(claude, "anthropic-native (claude-haiku-4-5)", "北京今天天气怎么样？", log, signal);
+    const claude = new AnthropicProvider(process.env.ANTHROPIC_API_KEY, "claude-sonnet-4-6");
+    await runAgent(claude, "claude-sonnet-4-6", "北京今天天气怎么样？", log, signal);
   } else {
-    log(`\x1b[2m[skip] 未配置 ANTHROPIC_API_KEY，跳过原生 Anthropic 对比。\x1b[0m`);
+    log(`\x1b[2m[skip] 未配置 ANTHROPIC_API_KEY，跳过 Claude 对比。\x1b[0m`);
   }
 
   log(`\n\x1b[32m✓ done\x1b[0m`);

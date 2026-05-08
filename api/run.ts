@@ -44,9 +44,9 @@ export default async function handler(req: Request) {
     );
   }
 
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.DEEPSEEK_API_KEY) {
+  if (!process.env.DEEPSEEK_API_KEY) {
     return jsonResponse(
-      { error: "服务端未配置任何 LLM key（ANTHROPIC_API_KEY / DEEPSEEK_API_KEY），请联系站点管理员。" },
+      { error: "服务端未配置 DEEPSEEK_API_KEY，请联系站点管理员。" },
       500
     );
   }

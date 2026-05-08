@@ -1,15 +1,17 @@
+import OpenAI from "openai";
 import { weatherTools, weatherImpls } from "./_shared/tools.js";
-import { makeClient } from "./_shared/client.js";
 
 export type RunCtx = { log: (line: string) => void; signal?: AbortSignal };
 
-export async function run({ log, signal }: RunCtx) {
-  const { client, model, label } = makeClient();
-  log(`\x1b[2m[provider] ${label} · model=${model}\x1b[0m`);
+const client = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY ?? "",
+  baseURL: "https://api.deepseek.com/v1",
+});
 
+export async function run({ log, signal }: RunCtx) {
   const userMessage = "帮我查 5 个城市的天气：北京、上海、深圳、杭州、广州";
   log(`\x1b[36m[user]\x1b[0m ${userMessage}`);
-  log(`\x1b[2m[demo] 5 秒后自动 abort，模拟用户点了 Stop\x1b[0m\n`);
+  log(`\x1b[2m[demo] 5 秒后会自动 abort，模拟用户点了 Stop 按钮\x1b[0m\n`);
 
   const internalAbort = new AbortController();
   const externalSub = () => internalAbort.abort(signal?.reason ?? "external abort");
@@ -26,9 +28,9 @@ export async function run({ log, signal }: RunCtx) {
         return;
       }
 
-      log(`\x1b[33m[step]\x1b[0m 调用 ${model} ...`);
+      log(`\x1b[33m[step]\x1b[0m 调用 deepseek-chat ...`);
       const resp = await client.chat.completions.create(
-        { model, messages, tools: weatherTools },
+        { model: "deepseek-chat", messages, tools: weatherTools },
         { signal: runSignal }
       );
       const assistantMsg = resp.choices[0].message;

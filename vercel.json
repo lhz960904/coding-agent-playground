@@ -3,8 +3,5 @@
   "buildCommand": "pnpm run build",
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
-  "framework": "vite",
-  "rewrites": [
-    { "source": "/((?!api/.*).*)", "destination": "/index.html" }
-  ]
+  "framework": "vite"
 }

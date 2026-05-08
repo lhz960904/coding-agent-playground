@@ -49,12 +49,24 @@ export const Terminal = forwardRef<TerminalHandle>(function Terminal(_, ref) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(containerRef.current);
-    fit.fit();
     xtermRef.current = term;
     fitRef.current = fit;
 
-    const ro = new ResizeObserver(() => fit.fit());
+    const ro = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {
+        // container 尺寸为 0 时 fit 会抛，忽略
+      }
+    });
     ro.observe(containerRef.current);
+    requestAnimationFrame(() => {
+      try {
+        fit.fit();
+      } catch {
+        // ignore
+      }
+    });
 
     term.writeln("\x1b[2m点击右上角 Run 按钮跑一下 ↗\x1b[0m");
 
@@ -71,5 +83,9 @@ export const Terminal = forwardRef<TerminalHandle>(function Terminal(_, ref) {
     clear: () => xtermRef.current?.clear(),
   }));
 
-  return <div ref={containerRef} className="h-full w-full bg-[#0d1117] p-3" />;
+  return (
+    <div className="h-full w-full overflow-hidden bg-[#0d1117] p-3">
+      <div ref={containerRef} className="h-full w-full" />
+    </div>
+  );
 });

@@ -194,10 +194,10 @@ function PartPage() {
         />
       </div>
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 min-h-0">
-        <div className="border-r border-[var(--color-border)] min-h-[300px] md:min-h-0">
+        <div className="border-r border-[var(--color-border)] overflow-hidden min-h-[300px] md:min-h-0">
           <CodeViewer code={part.code} />
         </div>
-        <div className="min-h-[300px] md:min-h-0">
+        <div className="overflow-hidden min-h-[300px] md:min-h-0">
           <Terminal ref={termRef} />
         </div>
       </div>

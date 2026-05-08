@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { weatherTools, weatherImpls } from "./_shared/tools.js";
+import { makeClient } from "./_shared/client.js";
 
 export type RunCtx = { log: (line: string) => void; signal?: AbortSignal };
 
@@ -169,19 +170,15 @@ async function* runAgent(
 }
 
 export async function run({ log, signal }: RunCtx) {
+  const { client, model, label } = makeClient();
+  log(`\x1b[2m[provider] ${label} · model=${model}\x1b[0m`);
+
   const userMessage = "用一句话介绍一下你自己，然后顺便查一下北京和上海的天气";
   log(`\x1b[36m[user]\x1b[0m ${userMessage}\n`);
   log(`\x1b[2m[demo] 注意 [assistant] 文本是流式逐字到达的，不是一整段 flush 出来的。\x1b[0m`);
   log(`\x1b[2m─────────────────────────\x1b[0m`);
   log(`\x1b[32m[assistant]\x1b[0m `);
 
-  const deepseek = new OpenAIProvider(
-    new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-      baseURL: "https://api.deepseek.com/v1",
-    }),
-    "deepseek-chat"
-  );
-
-  for await (const _ of runAgent(deepseek, userMessage, signal, log)) void _;
+  const provider = new OpenAIProvider(client, model);
+  for await (const _ of runAgent(provider, userMessage, signal, log)) void _;
 }

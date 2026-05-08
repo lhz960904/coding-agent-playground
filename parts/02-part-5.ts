@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 import { weatherTools, weatherImpls } from "./_shared/tools.js";
+import type { LogFn } from "./_shared/log.js";
 
-export type RunCtx = { log: (line: string) => void; signal?: AbortSignal };
+export type RunCtx = { log: LogFn; signal?: AbortSignal };
 
 type ContentBlock =
   | { type: "text"; text: string }
@@ -121,7 +122,7 @@ async function* runAgent(
   provider: OpenAIProvider,
   userMessage: string,
   signal: AbortSignal | undefined,
-  log: (s: string) => void
+  log: LogFn
 ): AsyncGenerator<{ type: "partial" | "message"; message: Message }> {
   const messages: Message[] = [
     { role: "user", content: [{ type: "text", text: userMessage }] },
@@ -136,7 +137,7 @@ async function* runAgent(
       assistantMsg = snapshot;
       const text = snapshot.content.find((c) => c.type === "text");
       if (text && text.type === "text" && text.text.length > lastTextLen) {
-        log(text.text.slice(lastTextLen));
+        log('raw', text.text.slice(lastTextLen));
         lastTextLen = text.text.length;
       }
       yield { type: "partial", message: snapshot };
@@ -150,14 +151,14 @@ async function* runAgent(
       (c): c is Extract<ContentBlock, { type: "tool_use" }> => c.type === "tool_use"
     );
     if (toolUses.length === 0) {
-      log(`\n\n\x1b[32m✓ done\x1b[0m`);
+      log('done');
       return;
     }
-    log(`\n\x1b[35m[tool_use]\x1b[0m ${toolUses.map((u) => `${u.name}(${JSON.stringify(u.input)})`).join(", ")}`);
+    log('tool_use', toolUses.map((u) => `${u.name}(${JSON.stringify(u.input)})`).join(", "));
 
     for (const u of toolUses) {
       const result = await weatherImpls[u.name](u.input, { signal });
-      log(`\x1b[34m[tool_result]\x1b[0m ${u.name}: ${result}`);
+      log('tool_result', `${u.name}: ${result}`);
       const toolMsg: Message = {
         role: "tool",
         content: [{ type: "tool_result", tool_use_id: u.id, content: result }],
@@ -170,12 +171,12 @@ async function* runAgent(
 
 export async function run({ log, signal }: RunCtx) {
   const userMessage = "用一句话介绍一下你自己，然后顺便查一下北京和上海的天气";
-  log(`\x1b[36m[user]\x1b[0m ${userMessage}\n`);
-  log(`\x1b[2m[demo] 注意 [assistant] 文本是流式逐字到达的，不是一整段 flush 出来的。\x1b[0m`);
-  log(`\x1b[2m─────────────────────────\x1b[0m`);
-  log(`\x1b[32m[assistant]\x1b[0m `);
+  log('user', userMessage);
+  log('dim', '注意 [assistant] 文本是流式逐字到达的，不是一整段 flush 出来的。');
+  log('dim', '─────────────────────────');
+  log('assistant', '');
 
-  const deepseek = new OpenAIProvider(
+  const provider = new OpenAIProvider(
     new OpenAI({
       apiKey: process.env.DEEPSEEK_API_KEY ?? "",
       baseURL: "https://api.deepseek.com/v1",
@@ -183,5 +184,5 @@ export async function run({ log, signal }: RunCtx) {
     "deepseek-chat"
   );
 
-  for await (const _ of runAgent(deepseek, userMessage, signal, log)) void _;
+  for await (const _ of runAgent(provider, userMessage, signal, log)) void _;
 }

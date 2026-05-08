@@ -1,52 +1,47 @@
 import OpenAI from "openai";
 import { weatherTools, weatherImpls } from "./_shared/tools.js";
+import type { LogFn } from "./_shared/log.js";
 
-export type RunCtx = { log: (line: string) => void; signal?: AbortSignal };
+export type RunCtx = { log: LogFn; signal?: AbortSignal };
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY ?? "",
   baseURL: "https://api.deepseek.com/v1",
 });
 
+const tools = weatherTools;
+
 export async function run({ log }: RunCtx) {
   const userMessage = "北京和上海今天天气怎么样？";
-  log(`\x1b[36m[user]\x1b[0m ${userMessage}\n`);
+  log('user', userMessage);
 
   const messages: any[] = [{ role: "user", content: userMessage }];
 
   while (true) {
-    log(`\x1b[33m[step]\x1b[0m 调用 deepseek-chat ...`);
+    log('step', '调用 deepseek-chat ...');
     const resp = await client.chat.completions.create({
       model: "deepseek-chat",
       messages,
-      tools: weatherTools,
+      tools,
     });
     const assistantMsg = resp.choices[0].message;
     messages.push(assistantMsg);
 
-    if (assistantMsg.tool_calls?.length) {
-      const summary = assistantMsg.tool_calls
-        .map((c: any) => `${c.function.name}(${c.function.arguments})`)
-        .join(", ");
-      log(`\x1b[35m[tool_calls]\x1b[0m ${summary}`);
-    }
-
     if (!assistantMsg.tool_calls?.length) {
-      log(`\n\x1b[32m[assistant]\x1b[0m ${assistantMsg.content ?? ""}`);
-      log(`\n\x1b[32m✓ done\x1b[0m`);
+      log('assistant', assistantMsg.content ?? "");
+      log('done');
       return;
     }
+
+    const summary = assistantMsg.tool_calls.map((c: any) => `${c.function.name}(${c.function.arguments})`).join(", ");
+    log('tool_calls', summary);
 
     const toolMsgs = await Promise.all(
       assistantMsg.tool_calls.map(async (call: any) => {
         const args = JSON.parse(call.function.arguments);
         const result = await weatherImpls[call.function.name](args);
-        log(`\x1b[34m[tool_result]\x1b[0m ${call.function.name}: ${result}`);
-        return {
-          role: "tool" as const,
-          tool_call_id: call.id,
-          content: result,
-        };
+        log('tool_result', `${call.function.name}: ${result}`);
+        return { role: "tool" as const, tool_call_id: call.id, content: result };
       })
     );
     messages.push(...toolMsgs);

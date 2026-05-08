@@ -3,11 +3,12 @@ import { run as runPart2 } from "../parts/02-part-2.js";
 import { run as runPart3 } from "../parts/02-part-3.js";
 import { run as runPart4 } from "../parts/02-part-4.js";
 import { run as runPart5 } from "../parts/02-part-5.js";
+import { makeLogger, type LogFn } from "../parts/_shared/log.js";
 import { checkRateLimit } from "./_lib/rate-limit.js";
 
 export const config = { runtime: "edge" };
 
-type Runner = (ctx: { log: (line: string) => void; signal?: AbortSignal }) => Promise<void>;
+type Runner = (ctx: { log: LogFn; signal?: AbortSignal }) => Promise<void>;
 
 const PART_RUNNERS: Record<string, Runner> = {
   "02-part-1": runPart1,
@@ -64,24 +65,25 @@ export default async function handler(req: Request) {
     async start(controller) {
       const watchdog = setTimeout(() => ac.abort("max duration 23s reached"), 23_000);
 
-      const send = (event: string, data: unknown) => {
+      const sendEvent = (event: string, data: unknown) => {
         if (aborted) return;
         controller.enqueue(
           encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
         );
       };
 
-      const log = (line: string) => {
-        send("output", { stream: "stdout", chunk: line + "\n" });
-      };
+      const log = makeLogger((text) => {
+        if (aborted) return;
+        sendEvent("output", { stream: "stdout", chunk: text });
+      });
 
       try {
-        log(`\x1b[2m──── partId=${partId} · IP=${ip} · 今日剩余 ${rl.remaining} 次 ────\x1b[0m`);
+        log('dim', `──── partId=${partId} · IP=${ip} · 今日剩余 ${rl.remaining} 次 ────`);
         await runner({ log, signal: ac.signal });
-        send("exit", { code: 0 });
+        sendEvent("exit", { code: 0 });
       } catch (err: any) {
         if (!aborted) {
-          send("error", { message: err?.message ?? String(err) });
+          sendEvent("error", { message: err?.message ?? String(err) });
         }
       } finally {
         clearTimeout(watchdog);

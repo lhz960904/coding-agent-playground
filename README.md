@@ -2,7 +2,8 @@
 
 > 配套 [code-artisan](https://github.com/lhz960904/code-artisan) 拆解系列的在线运行平台。每篇文章对应若干个可运行 part，读者点链接就能在浏览器看完整代码 + 直接跑实际效果，**无需配置任何 LLM key**。
 
-![preview](./docs/preview.png)
+<!-- preview 截图，部署完成后补 -->
+<!-- ![preview](./docs/preview.png) -->
 
 ## 当前内容
 

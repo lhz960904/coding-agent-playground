@@ -4,12 +4,6 @@
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "@vercel/node@5.1.0",
-      "maxDuration": 60
-    }
-  },
   "rewrites": [
     { "source": "/((?!api/.*).*)", "destination": "/index.html" }
   ]

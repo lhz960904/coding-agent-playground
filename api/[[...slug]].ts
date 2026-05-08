@@ -8,6 +8,8 @@ import { run as runPart4 } from "../parts/02-part-4.js";
 import { run as runPart5 } from "../parts/02-part-5.js";
 import { checkRateLimit } from "./_lib/rate-limit.js";
 
+export const runtime = "edge";
+
 type Runner = (ctx: { log: (line: string) => void; signal?: AbortSignal }) => Promise<void>;
 
 const PART_RUNNERS: Record<string, Runner> = {

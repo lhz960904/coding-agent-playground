@@ -1,0 +1,140 @@
+// 内部统一的 block-based 消息格式
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: any }
+  | { type: "tool_result"; tool_use_id: string; content: string };
+
+interface Message {
+  role: "system" | "user" | "assistant" | "tool";
+  content: ContentBlock[];
+}
+
+interface Tool {
+  name: string;
+  description: string;
+  parameters: any;
+}
+
+interface LLMProvider {
+  invoke(params: {
+    messages: Message[];
+    tools: Tool[];
+    signal?: AbortSignal;
+  }): Promise<Message>;
+}
+
+// 主循环只认 LLMProvider 接口
+async function* runAgent(
+  provider: LLMProvider,
+  userMessage: string,
+  signal: AbortSignal
+) {
+  const messages: Message[] = [
+    { role: "user", content: [{ type: "text", text: userMessage }] },
+  ];
+
+  while (true) {
+    if (signal.aborted) break;
+
+    const assistantMsg = await provider.invoke({ messages, tools, signal });
+    messages.push(assistantMsg);
+    yield { type: "message", message: assistantMsg };
+
+    const toolUses = assistantMsg.content.filter(
+      (c): c is Extract<ContentBlock, { type: "tool_use" }> => c.type === "tool_use"
+    );
+    if (toolUses.length === 0) return;
+
+    for await (const result of runToolsStreaming(toolUses, signal)) {
+      const toolMsg: Message = {
+        role: "tool",
+        content: [{ type: "tool_result", tool_use_id: result.id, content: result.content }],
+      };
+      messages.push(toolMsg);
+      yield { type: "message", message: toolMsg };
+    }
+  }
+}
+
+// OpenAIProvider：把内部格式翻译成 OpenAI / DeepSeek / Kimi 期望的形状
+class OpenAIProvider implements LLMProvider {
+  constructor(private client: OpenAI, private model: string) {}
+
+  async invoke({ messages, tools, signal }: any): Promise<Message> {
+    const resp = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        messages: this.toOpenAIMessages(messages),
+        tools: tools.map((t: Tool) => ({
+          type: "function" as const,
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        })),
+      },
+      { signal }
+    );
+    return this.fromOpenAIMessage(resp.choices[0].message);
+  }
+
+  private toOpenAIMessages(messages: Message[]): any[] {
+    return messages.flatMap((m) => {
+      if (m.role === "tool") {
+        return m.content
+          .filter((c) => c.type === "tool_result")
+          .map((c: any) => ({
+            role: "tool",
+            tool_call_id: c.tool_use_id,
+            content: c.content,
+          }));
+      }
+      if (m.role === "assistant") {
+        const text = m.content.filter((c) => c.type === "text").map((c: any) => c.text).join("");
+        const toolCalls = m.content
+          .filter((c) => c.type === "tool_use")
+          .map((c: any) => ({
+            id: c.id,
+            type: "function",
+            function: { name: c.name, arguments: JSON.stringify(c.input) },
+          }));
+        return [{
+          role: "assistant",
+          content: text || null,
+          tool_calls: toolCalls.length ? toolCalls : undefined,
+        }];
+      }
+      const text = m.content.filter((c) => c.type === "text").map((c: any) => c.text).join("");
+      return [{ role: m.role, content: text }];
+    });
+  }
+
+  private fromOpenAIMessage(msg: any): Message {
+    const blocks: ContentBlock[] = [];
+    if (msg.content) blocks.push({ type: "text", text: msg.content });
+    if (msg.tool_calls) {
+      for (const c of msg.tool_calls) {
+        blocks.push({
+          type: "tool_use",
+          id: c.id,
+          name: c.function.name,
+          input: JSON.parse(c.function.arguments),
+        });
+      }
+    }
+    return { role: "assistant", content: blocks };
+  }
+}
+
+// AnthropicProvider 思路相同，转换 toAnthropicMessages / fromAnthropicMessage
+// 完整代码见 GitHub: github.com/lhz960904/code-artisan
+
+const deepseek = new OpenAIProvider(
+  new OpenAI({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: "https://api.deepseek.com/v1",
+  }),
+  "deepseek-chat"
+);
+
+const claude = new AnthropicProvider(/* ... */);
+
+await runAgent(deepseek, "...", signal);
+await runAgent(claude, "...", signal);

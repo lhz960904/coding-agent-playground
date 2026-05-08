@@ -1,0 +1,32 @@
+async function runAgent(userMessage: string, signal: AbortSignal) {
+  const messages: any[] = [{ role: "user", content: userMessage }];
+
+  while (true) {
+    if (signal.aborted) break;
+
+    const resp = await client.chat.completions.create(
+      { model: "deepseek-chat", messages, tools },
+      { signal }
+    );
+    const assistantMsg = resp.choices[0].message;
+    messages.push(assistantMsg);
+
+    if (!assistantMsg.tool_calls?.length) return assistantMsg.content;
+    if (signal.aborted) break;
+
+    const toolMsgs = await Promise.all(
+      assistantMsg.tool_calls.map(async (call) => {
+        const args = JSON.parse(call.function.arguments);
+        const result = await toolImpls[call.function.name](args, { signal });
+        return { role: "tool" as const, tool_call_id: call.id, content: result };
+      })
+    );
+    messages.push(...toolMsgs);
+  }
+  return null;
+}
+
+// 调用方：
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 5000);
+await runAgent("帮我查 10 个城市的天气", controller.signal);

@@ -16,7 +16,7 @@ export function runPart(
   const done = (async () => {
     let resp: Response;
     try {
-      resp = await fetch(`/api/run/${encodeURIComponent(partId)}`, {
+      resp = await fetch(`/api/run?partId=${encodeURIComponent(partId)}`, {
         method: "POST",
         signal: ac.signal,
         headers: { "Content-Type": "application/json" },

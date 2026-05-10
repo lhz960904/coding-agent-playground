@@ -15,9 +15,10 @@ const tools = [
   },
 ];
 
-const toolImpls: Record<string, (input: any, ctx?: { signal?: AbortSignal }) => Promise<string>> = {
-  get_weather: async ({ city }) => {
+const toolImpls: Record<string, (input: any, ctx: { signal?: AbortSignal }) => Promise<string>> = {
+  get_weather: async ({ city }, { signal }) => {
     await new Promise((r) => setTimeout(r, 300));
+    if (signal?.aborted) throw signal.reason;
     return `${city} 今天 25°C 晴`;
   },
 };
@@ -49,6 +50,7 @@ export class Agent {
       while (true) {
         if (signal.aborted) {
           console.log("[aborted]", String(signal.reason));
+          this._finalizeOnAbort(String(signal.reason));
           return;
         }
 
@@ -68,6 +70,7 @@ export class Agent {
 
         if (signal.aborted) {
           console.log("[aborted] before tool execution");
+          this._finalizeOnAbort(String(signal.reason));
           return;
         }
 
@@ -84,11 +87,29 @@ export class Agent {
     } catch (err: any) {
       if (signal.aborted) {
         console.log("[aborted] LLM request aborted");
+        this._finalizeOnAbort(String(signal.reason));
         return;
       }
       throw err;
     } finally {
       this._abortController = null;
+    }
+  }
+
+  private _finalizeOnAbort(reason: string) {
+    const last = this.messages.findLast((m: any) => m.role === "assistant");
+    if (!last?.tool_calls?.length) return;
+    const done = new Set(
+      this.messages.filter((m: any) => m.role === "tool").map((m: any) => m.tool_call_id)
+    );
+    for (const call of last.tool_calls) {
+      if (done.has(call.id)) continue;
+      this.messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: `[interrupted] ${reason}`,
+      });
+      console.log("[tool_result]", `${call.function.name}: [interrupted] ${reason}`);
     }
   }
 }

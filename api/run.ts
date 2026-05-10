@@ -1,21 +1,21 @@
-import { run as runPart1 } from "../parts/02-part-1.js";
-import { run as runPart2 } from "../parts/02-part-2.js";
-import { run as runPart3 } from "../parts/02-part-3.js";
-import { run as runPart4 } from "../parts/02-part-4.js";
-import { run as runPart5 } from "../parts/02-part-5.js";
-import { makeLogger, type LogFn } from "../parts/_shared/log.js";
+import { withConsoleEmitter } from "./_lib/console-als.js";
+import { demo as demoPart1 } from "../parts/02-part-1.js";
+import { demo as demoPart2 } from "../parts/02-part-2.js";
+import { demo as demoPart3 } from "../parts/02-part-3.js";
+import { demo as demoPart4 } from "../parts/02-part-4.js";
+import { demo as demoPart5 } from "../parts/02-part-5.js";
 import { checkRateLimit } from "./_lib/rate-limit.js";
 
 export const config = { runtime: "edge" };
 
-type Runner = (ctx: { log: LogFn; signal?: AbortSignal }) => Promise<void>;
+type Runner = (options?: { signal?: AbortSignal }) => Promise<void>;
 
 const PART_RUNNERS: Record<string, Runner> = {
-  "02-part-1": runPart1,
-  "02-part-2": runPart2,
-  "02-part-3": runPart3,
-  "02-part-4": runPart4,
-  "02-part-5": runPart5,
+  "02-part-1": demoPart1,
+  "02-part-2": demoPart2,
+  "02-part-3": demoPart3,
+  "02-part-4": demoPart4,
+  "02-part-5": demoPart5,
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -72,14 +72,14 @@ export default async function handler(req: Request) {
         );
       };
 
-      const log = makeLogger((text) => {
+      const emit = (chunk: string) => {
         if (aborted) return;
-        sendEvent("output", { stream: "stdout", chunk: text });
-      });
+        sendEvent("output", { stream: "stdout", chunk });
+      };
 
       try {
-        log('dim', `──── partId=${partId} · IP=${ip} · 今日剩余 ${rl.remaining} 次 ────`);
-        await runner({ log, signal: ac.signal });
+        emit(`\x1b[2m──── partId=${partId} · IP=${ip} · 今日剩余 ${rl.remaining} 次 ────\x1b[0m\n`);
+        await withConsoleEmitter(emit, () => runner({ signal: ac.signal }));
         sendEvent("exit", { code: 0 });
       } catch (err: any) {
         if (!aborted) {

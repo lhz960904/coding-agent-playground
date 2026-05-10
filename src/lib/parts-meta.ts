@@ -19,12 +19,8 @@ export type PartMeta = {
   code: string;
 };
 
-function commentOutLogs(code: string): string {
-  return code.replace(/^(\s*)(log\([^\n]*\);?)\s*$/gm, "$1// $2");
-}
-
 function prepare(source: string): string {
-  return commentOutLogs(source).trimEnd() + "\n";
+  return source.trimEnd() + "\n";
 }
 
 export const articles: ArticleMeta[] = [
@@ -37,7 +33,7 @@ export const articles: ArticleMeta[] = [
         id: "02-part-1",
         label: "Part 1",
         title: "核心概念 + 最简实现",
-        summary: "while + Promise.all 的 ReAct 循环，灰色注释行是 playground 的可观测注入，去掉也能跑",
+        summary: "Agent 类 + while 循环 + Promise.all 的 ReAct 循环，最简形态。直接复制到自己项目里就能跑（只需 openai SDK）。",
         code: prepare(part1Source),
       },
       {

@@ -1,8 +1,5 @@
 import OpenAI from "openai";
-import { weatherTools, weatherImpls } from "./_shared/tools.js";
-import type { LogFn } from "./_shared/log.js";
-
-export type RunCtx = { log: LogFn; signal?: AbortSignal };
+import Anthropic from "@anthropic-ai/sdk";
 
 type ContentBlock =
   | { type: "text"; text: string }
@@ -30,7 +27,7 @@ interface LLMProvider {
   invoke(params: InvokeParams): Promise<Message>;
 }
 
-class OpenAIProvider implements LLMProvider {
+export class OpenAIProvider implements LLMProvider {
   constructor(private client: OpenAI, private model: string) {}
 
   async invoke({ messages, tools, signal }: InvokeParams): Promise<Message> {
@@ -92,69 +89,145 @@ class OpenAIProvider implements LLMProvider {
   }
 }
 
+export class AnthropicProvider implements LLMProvider {
+  private client: Anthropic;
+  constructor(apiKey: string, private model: string) {
+    this.client = new Anthropic({ apiKey });
+  }
+
+  async invoke({ messages, tools, signal }: InvokeParams): Promise<Message> {
+    const sys = messages.find((m) => m.role === "system");
+    const sysText = sys?.content.filter((c) => c.type === "text").map((c: any) => c.text).join("") ?? "";
+
+    const resp = await this.client.messages.create(
+      {
+        model: this.model,
+        max_tokens: 1024,
+        system: sysText || undefined,
+        messages: messages.filter((m) => m.role !== "system").map((m) => this.toAnthropicMessage(m)) as any,
+        tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })),
+      },
+      { signal }
+    );
+
+    const blocks: ContentBlock[] = [];
+    for (const b of resp.content) {
+      if (b.type === "text") blocks.push({ type: "text", text: b.text });
+      else if (b.type === "tool_use") blocks.push({ type: "tool_use", id: b.id, name: b.name, input: b.input });
+    }
+    return { role: "assistant", content: blocks };
+  }
+
+  private toAnthropicMessage(m: Message): any {
+    if (m.role === "tool") {
+      return {
+        role: "user",
+        content: m.content.filter((c) => c.type === "tool_result").map((c: any) => ({
+          type: "tool_result", tool_use_id: c.tool_use_id, content: c.content,
+        })),
+      };
+    }
+    if (m.role === "assistant") {
+      return {
+        role: "assistant",
+        content: m.content.map((c) => {
+          if (c.type === "text") return { type: "text", text: c.text };
+          if (c.type === "tool_use") return { type: "tool_use", id: c.id, name: c.name, input: c.input };
+          throw new Error("unsupported assistant block");
+        }),
+      };
+    }
+    return {
+      role: "user",
+      content: m.content.filter((c) => c.type === "text").map((c: any) => ({ type: "text", text: c.text })),
+    };
+  }
+}
+
 const tools: Tool[] = [
   {
-    name: weatherTools[0].function.name,
-    description: weatherTools[0].function.description,
-    parameters: weatherTools[0].function.parameters,
+    name: "get_weather",
+    description: "查询某个城市的天气",
+    parameters: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
   },
 ];
 
-async function runAgent(provider: LLMProvider, providerLabel: string, userMessage: string, log: LogFn, signal?: AbortSignal) {
-  log('user', `[${providerLabel}] ${userMessage}`);
-  const messages: Message[] = [
-    { role: "user", content: [{ type: "text", text: userMessage }] },
-  ];
-  while (true) {
-    if (signal?.aborted) return;
+const toolImpls: Record<string, (input: any, ctx?: { signal?: AbortSignal }) => Promise<string>> = {
+  get_weather: async ({ city }) => {
+    await new Promise((r) => setTimeout(r, 300));
+    return `${city} 今天 25°C 晴`;
+  },
+};
 
-    log('step', 'provider.invoke ...');
-    const assistantMsg = await provider.invoke({ messages, tools, signal });
-    messages.push(assistantMsg);
+export class Agent {
+  private messages: Message[] = [];
+  private _abortController: AbortController | null = null;
 
-    const toolUses = assistantMsg.content.filter(
-      (c): c is Extract<ContentBlock, { type: "tool_use" }> => c.type === "tool_use"
-    );
+  constructor(private provider: LLMProvider, private label: string) {}
 
-    if (toolUses.length === 0) {
-      const text = assistantMsg.content.filter((c) => c.type === "text").map((c: any) => c.text).join("");
-      log('assistant', `[@ ${providerLabel}] ${text}`);
-      return;
-    }
-    log('tool_use', toolUses.map((u) => `${u.name}(${JSON.stringify(u.input)})`).join(", "));
+  abort(reason?: unknown) {
+    this._abortController?.abort(reason);
+  }
 
-    for (const u of toolUses) {
-      const result = await weatherImpls[u.name](u.input, { signal });
-      log('tool_result', `${u.name}: ${result}`);
-      messages.push({
-        role: "tool",
-        content: [{ type: "tool_result", tool_use_id: u.id, content: result }],
-      });
+  async run(input: string) {
+    this._abortController = new AbortController();
+    const signal = this._abortController.signal;
+
+    console.log("[user]", `[${this.label}] ${input}`);
+    this.messages.push({ role: "user", content: [{ type: "text", text: input }] });
+
+    try {
+      while (true) {
+        if (signal.aborted) return;
+
+        console.log("[step] provider.invoke ...");
+        const assistant = await this.provider.invoke({ messages: this.messages, tools, signal });
+        this.messages.push(assistant);
+
+        const toolUses = assistant.content.filter(
+          (c): c is Extract<ContentBlock, { type: "tool_use" }> => c.type === "tool_use"
+        );
+
+        if (toolUses.length === 0) {
+          const text = assistant.content.filter((c) => c.type === "text").map((c: any) => c.text).join("");
+          console.log("[assistant]", `[@ ${this.label}] ${text}`);
+          return;
+        }
+        console.log("[tool_use]", toolUses.map((u) => `${u.name}(${JSON.stringify(u.input)})`).join(", "));
+
+        for (const u of toolUses) {
+          const result = await toolImpls[u.name](u.input, { signal });
+          console.log("[tool_result]", `${u.name}: ${result}`);
+          this.messages.push({
+            role: "tool",
+            content: [{ type: "tool_result", tool_use_id: u.id, content: result }],
+          });
+        }
+      }
+    } finally {
+      this._abortController = null;
     }
   }
 }
 
-export async function run({ log, signal }: RunCtx) {
-  log('dim', '同一个主循环跑 DeepSeek（OpenAI 协议）。如果配了 ANTHROPIC_API_KEY，再跑一遍 Claude 对比。');
+export async function demo({ signal }: { signal?: AbortSignal } = {}) {
+  console.log("[dim] 同一个 Agent 主循环，先跑 DeepSeek（OpenAI 协议）。如果配了 ANTHROPIC_API_KEY，再跑一遍 Claude。");
 
   const deepseek = new OpenAIProvider(
-    new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-      baseURL: "https://api.deepseek.com/v1",
-    }),
+    new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? "", baseURL: "https://api.deepseek.com/v1" }),
     "deepseek-chat"
   );
-
-  await runAgent(deepseek, "deepseek-chat", "北京今天天气怎么样？", log, signal);
+  const a1 = new Agent(deepseek, "deepseek-chat");
+  signal?.addEventListener("abort", () => a1.abort(signal.reason));
+  await a1.run("北京今天天气怎么样？");
 
   if (process.env.ANTHROPIC_API_KEY) {
-    log('dim', '─── 切到 Anthropic Provider ───');
-    const { AnthropicProvider } = await import("./_shared/anthropic-provider.js");
+    console.log("[dim] ─── 切到 Anthropic Provider ───");
     const claude = new AnthropicProvider(process.env.ANTHROPIC_API_KEY, "claude-sonnet-4-6");
-    await runAgent(claude, "claude-sonnet-4-6", "北京今天天气怎么样？", log, signal);
+    const a2 = new Agent(claude, "claude-sonnet-4-6");
+    signal?.addEventListener("abort", () => a2.abort(signal.reason));
+    await a2.run("北京今天天气怎么样？");
   } else {
-    log('dim', '[skip] 未配置 ANTHROPIC_API_KEY，跳过 Claude 对比。');
+    console.log("[dim] [skip] 未配置 ANTHROPIC_API_KEY，跳过 Claude 对比。");
   }
-
-  log('done');
 }

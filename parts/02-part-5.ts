@@ -1,8 +1,4 @@
 import OpenAI from "openai";
-import { weatherTools, weatherImpls } from "./_shared/tools.js";
-import type { LogFn } from "./_shared/log.js";
-
-export type RunCtx = { log: LogFn; signal?: AbortSignal };
 
 type ContentBlock =
   | { type: "text"; text: string }
@@ -26,7 +22,11 @@ interface InvokeParams {
   signal?: AbortSignal;
 }
 
-class OpenAIProvider {
+type AgentEvent =
+  | { type: "partial"; message: Message }
+  | { type: "message"; message: Message };
+
+export class OpenAIProvider {
   constructor(private client: OpenAI, private model: string) {}
 
   async *stream({ messages, tools, signal }: InvokeParams): AsyncGenerator<Message> {
@@ -74,9 +74,7 @@ class OpenAIProvider {
       let input: any = {};
       try {
         input = JSON.parse(tc.argsJson);
-      } catch {
-        // 还没拼成 valid JSON，先留空对象
-      }
+      } catch {}
       blocks.push({ type: "tool_use", id: tc.id, name: tc.name, input });
     }
     return { role: "assistant", content: blocks };
@@ -112,77 +110,98 @@ class OpenAIProvider {
 
 const tools: Tool[] = [
   {
-    name: weatherTools[0].function.name,
-    description: weatherTools[0].function.description,
-    parameters: weatherTools[0].function.parameters,
+    name: "get_weather",
+    description: "查询某个城市的天气",
+    parameters: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
   },
 ];
 
-async function* runAgent(
-  provider: OpenAIProvider,
-  userMessage: string,
-  signal: AbortSignal | undefined,
-  log: LogFn
-): AsyncGenerator<{ type: "partial" | "message"; message: Message }> {
-  const messages: Message[] = [
-    { role: "user", content: [{ type: "text", text: userMessage }] },
-  ];
+const toolImpls: Record<string, (input: any, ctx?: { signal?: AbortSignal }) => Promise<string>> = {
+  get_weather: async ({ city }) => {
+    await new Promise((r) => setTimeout(r, 300));
+    return `${city} 今天 25°C 晴`;
+  },
+};
 
-  while (true) {
-    if (signal?.aborted) return;
+export class Agent {
+  private messages: Message[] = [];
+  private _abortController: AbortController | null = null;
 
-    let assistantMsg: Message | null = null;
-    let lastTextLen = 0;
-    for await (const snapshot of provider.stream({ messages, tools, signal })) {
-      assistantMsg = snapshot;
-      const text = snapshot.content.find((c) => c.type === "text");
-      if (text && text.type === "text" && text.text.length > lastTextLen) {
-        log('raw', text.text.slice(lastTextLen));
-        lastTextLen = text.text.length;
+  constructor(private provider: OpenAIProvider) {}
+
+  abort(reason?: unknown) {
+    this._abortController?.abort(reason);
+  }
+
+  async invoke(input: string): Promise<Message[]> {
+    const collected: Message[] = [];
+    for await (const ev of this.stream(input)) {
+      if (ev.type === "message") collected.push(ev.message);
+    }
+    return collected;
+  }
+
+  async *stream(input: string): AsyncGenerator<AgentEvent> {
+    this._abortController = new AbortController();
+    const signal = this._abortController.signal;
+    this.messages.push({ role: "user", content: [{ type: "text", text: input }] });
+
+    try {
+      while (true) {
+        if (signal.aborted) return;
+
+        let assistant: Message | null = null;
+        let lastTextLen = 0;
+        for await (const snapshot of this.provider.stream({ messages: this.messages, tools, signal })) {
+          assistant = snapshot;
+          const text = snapshot.content.find((c) => c.type === "text");
+          if (text && text.type === "text" && text.text.length > lastTextLen) {
+            process.stdout.write(text.text.slice(lastTextLen));
+            lastTextLen = text.text.length;
+          }
+          yield { type: "partial", message: snapshot };
+        }
+        if (!assistant) return;
+
+        this.messages.push(assistant);
+        yield { type: "message", message: assistant };
+
+        const toolUses = assistant.content.filter(
+          (c): c is Extract<ContentBlock, { type: "tool_use" }> => c.type === "tool_use"
+        );
+        if (toolUses.length === 0) return;
+
+        console.log("\n[tool_use]", toolUses.map((u) => `${u.name}(${JSON.stringify(u.input)})`).join(", "));
+
+        for (const u of toolUses) {
+          const result = await toolImpls[u.name](u.input, { signal });
+          console.log("[tool_result]", `${u.name}: ${result}`);
+          const toolMsg: Message = {
+            role: "tool",
+            content: [{ type: "tool_result", tool_use_id: u.id, content: result }],
+          };
+          this.messages.push(toolMsg);
+          yield { type: "message", message: toolMsg };
+        }
       }
-      yield { type: "partial", message: snapshot };
-    }
-    if (!assistantMsg) break;
-
-    messages.push(assistantMsg);
-    yield { type: "message", message: assistantMsg };
-
-    const toolUses = assistantMsg.content.filter(
-      (c): c is Extract<ContentBlock, { type: "tool_use" }> => c.type === "tool_use"
-    );
-    if (toolUses.length === 0) {
-      log('done');
-      return;
-    }
-    log('tool_use', toolUses.map((u) => `${u.name}(${JSON.stringify(u.input)})`).join(", "));
-
-    for (const u of toolUses) {
-      const result = await weatherImpls[u.name](u.input, { signal });
-      log('tool_result', `${u.name}: ${result}`);
-      const toolMsg: Message = {
-        role: "tool",
-        content: [{ type: "tool_result", tool_use_id: u.id, content: result }],
-      };
-      messages.push(toolMsg);
-      yield { type: "message", message: toolMsg };
+    } finally {
+      this._abortController = null;
     }
   }
 }
 
-export async function run({ log, signal }: RunCtx) {
-  const userMessage = "用一句话介绍一下你自己，然后顺便查一下北京和上海的天气";
-  log('user', userMessage);
-  log('dim', '注意 [assistant] 文本是流式逐字到达的，不是一整段 flush 出来的。');
-  log('dim', '─────────────────────────');
-  log('assistant', '');
+export async function demo({ signal }: { signal?: AbortSignal } = {}) {
+  console.log("[user] 用一句话介绍一下你自己，然后顺便查一下北京和上海的天气");
+  console.log("[dim] 注意 [assistant] 文本是流式逐字到达的，不是一整段 flush 出来的。");
+  console.log("[dim] ─────────────────────────");
+  console.log("[assistant]");
 
   const provider = new OpenAIProvider(
-    new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-      baseURL: "https://api.deepseek.com/v1",
-    }),
+    new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY ?? "", baseURL: "https://api.deepseek.com/v1" }),
     "deepseek-chat"
   );
+  const agent = new Agent(provider);
+  signal?.addEventListener("abort", () => agent.abort(signal.reason));
 
-  for await (const _ of runAgent(provider, userMessage, signal, log)) void _;
+  for await (const _ of agent.stream("用一句话介绍一下你自己，然后顺便查一下北京和上海的天气")) void _;
 }

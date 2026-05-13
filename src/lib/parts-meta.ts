@@ -72,7 +72,7 @@ export const articles: ArticleMeta[] = [
   },
   {
     id: "03-tools",
-    title: "code-artisan 03 · 从通用 Agent 到 Coding Agent，工具系统怎么搭",
+    title: "code-artisan 03 · Agent 工具系统搭建：4 个内置工具让 Agent 学会写代码",
     juejinUrl: "https://juejin.cn/post/code-artisan-03",
     parts: [
       {

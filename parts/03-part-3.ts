@@ -64,19 +64,21 @@ const writeFileTool = defineTool({
 
 const strReplaceTool = defineTool({
   name: "str_replace",
-  description: "在文件里把 old_string 替换成 new_string。old_string 必须在文件里唯一出现，否则报错",
+  description: "在文件里把 old_str 替换成 new_str。默认只换第一处出现；传 replace_all=true 才会全部替换",
   parameters: z.object({
     path: z.string().describe("文件的绝对路径"),
-    old_string: z.string().describe("要替换的旧字符串，必须精确匹配并在文件中唯一"),
-    new_string: z.string().describe("替换成的新字符串"),
+    old_str: z.string().describe("要替换的旧字符串"),
+    new_str: z.string().describe("新字符串"),
+    replace_all: z.boolean().optional().describe("是否替换所有匹配"),
   }),
-  invoke: async ({ path, old_string, new_string }) => {
-    const content = await readFile(path, "utf8");
-    const matches = content.split(old_string).length - 1;
-    if (matches === 0) throw new Error(`old_string 在 ${path} 里没找到`);
-    if (matches > 1) throw new Error(`old_string 在 ${path} 里出现 ${matches} 次，不唯一。把 old_string 扩大一些上下文`);
-    await writeFile(path, content.replace(old_string, new_string), "utf8");
-    return `replaced 1 occurrence in ${path}`;
+  invoke: async ({ path, old_str, new_str, replace_all }) => {
+    let content = await readFile(path, "utf8");
+    if (!content.includes(old_str)) throw new Error(`old_str 在 ${path} 里没找到`);
+    content = replace_all
+      ? content.replaceAll(old_str, new_str)
+      : content.replace(old_str, new_str);
+    await writeFile(path, content, "utf8");
+    return "OK";
   },
 });
 

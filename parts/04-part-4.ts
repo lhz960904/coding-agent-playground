@@ -243,7 +243,7 @@ export class Agent {
 
 export async function demo({ signal }: { signal?: AbortSignal } = {}) {
   console.log("[dim] Part 4 · auto-compact middleware");
-  console.log("[dim] 把 threshold 故意调到 1500 tokens，让 LLM 查到一半就触发摘要压缩");
+  console.log("[dim] 把 threshold 故意调到 400 tokens（生产里会是 100k+），让 LLM 查到一半就触发摘要压缩");
   console.log("[dim] 注意压缩前后的 messages.length 数字变化");
   console.log("[dim] ─────────────────────────");
 
@@ -255,7 +255,7 @@ export async function demo({ signal }: { signal?: AbortSignal } = {}) {
       // 生产里这里应该传一个更便宜的模型；demo 简化用同一个
       provider: agent.getClient(),
       summaryModel: "deepseek-chat",
-      threshold: 1500,
+      threshold: 400,
     })
   );
 

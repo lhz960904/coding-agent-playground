@@ -28,13 +28,16 @@ importers:
         version: 4.12.18
       openai:
         specifier: ^4.77.0
-        version: 4.104.0
+        version: 4.104.0(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.6
       react-dom:
         specifier: ^19.0.0
         version: 19.2.6(react@19.2.6)
+      zod:
+        specifier: ^4.3.6
+        version: 4.4.3
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.0.0
@@ -1085,6 +1088,9 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
 snapshots:
 
   '@anthropic-ai/sdk@0.32.1':
@@ -1824,7 +1830,7 @@ snapshots:
 
   node-releases@2.0.38: {}
 
-  openai@4.104.0:
+  openai@4.104.0(zod@4.4.3):
     dependencies:
       '@types/node': 18.19.130
       '@types/node-fetch': 2.6.13
@@ -1833,6 +1839,8 @@ snapshots:
       form-data-encoder: 1.7.2
       formdata-node: 4.4.1
       node-fetch: 2.7.0
+    optionalDependencies:
+      zod: 4.4.3
     transitivePeerDependencies:
       - encoding
 
@@ -1951,3 +1959,5 @@ snapshots:
       webidl-conversions: 3.0.1
 
   yallist@3.1.1: {}
+
+  zod@4.4.3: {}

@@ -90,10 +90,25 @@ function loopDetectionMiddleware(options: LoopDetectionOptions = {}): AgentMiddl
   // 状态全在闭包里，每个 .use() 都拿到独立实例，多 agent 并发互不串台
   const hashes: string[] = [];
   let warned = false;
+  // OpenAI 协议要求 assistant.tool_calls 后紧接 tool 消息，中间不能插 user；
+  // 所以 afterModel 检测到的提示消息要先挂在闭包里，下一次 beforeModel（tool_results 都 push 完之后）再补
+  let pendingMsg: { role: "user"; content: string } | null = null;
+  let pendingStop = false;
 
   return {
+    // 下一轮开头：把上一轮 afterModel 排好的消息真正 push 进去，再决定要不要 shouldStop
+    beforeModel: (ctx) => {
+      if (pendingMsg) {
+        ctx.messages.push(pendingMsg);
+        pendingMsg = null;
+      }
+      if (pendingStop) {
+        ctx.shouldStop = true;
+        pendingStop = false;
+      }
+    },
     // 钩子用 afterModel：LLM 已经决定调哪些工具，但还没真跑，是阻止资源浪费的最早时机
-    afterModel: (ctx, message) => {
+    afterModel: (_ctx, message) => {
       const toolCalls = message.tool_calls ?? [];
       if (toolCalls.length === 0) return;
 
@@ -117,14 +132,14 @@ function loopDetectionMiddleware(options: LoopDetectionOptions = {}): AgentMiddl
       }
 
       if (max >= hardLimit) {
-        ctx.shouldStop = true;
-        // 本轮 LLM 不会看到这条消息（主循环已退）；留给下次 agent.run() 用
-        ctx.messages.push({ role: "user", content: STOP_MESSAGE });
-        console.log("[loop-detection]", `hard stop triggered (max repeat = ${max})`);
+        // 排好下一轮 beforeModel 的动作：先补 STOP_MESSAGE，再把 shouldStop 置 true
+        pendingMsg = { role: "user", content: STOP_MESSAGE };
+        pendingStop = true;
+        console.log("[loop-detection]", `hard stop scheduled (max repeat = ${max})`);
       } else if (max >= warnThreshold && !warned) {
         warned = true; // 警告只发一次，重复消息只会让 LLM 更乱
-        ctx.messages.push({ role: "user", content: WARN_MESSAGE });
-        console.log("[loop-detection]", `warning injected (max repeat = ${max})`);
+        pendingMsg = { role: "user", content: WARN_MESSAGE };
+        console.log("[loop-detection]", `warning scheduled (max repeat = ${max})`);
       }
     },
   };
@@ -155,6 +170,8 @@ export class Agent {
 
     while (!ctx.signal?.aborted && !agentCtx.shouldStop) {
       for (const mw of this.middlewares) await mw.beforeModel?.(agentCtx);
+      // beforeModel 里可能把 shouldStop 标了（loop-detection 的硬停就是这样），这时立刻退出避免多调一次 LLM
+      if (agentCtx.shouldStop) break;
 
       const resp = await this.client.chat.completions.create({
         model: "deepseek-chat",

@@ -7,6 +7,10 @@ import part03_1Source from "../../parts/03-part-1.ts?raw";
 import part03_2Source from "../../parts/03-part-2.ts?raw";
 import part03_3Source from "../../parts/03-part-3.ts?raw";
 import part03_4Source from "../../parts/03-part-4.ts?raw";
+import part04_1Source from "../../parts/04-part-1.ts?raw";
+import part04_2Source from "../../parts/04-part-2.ts?raw";
+import part04_3Source from "../../parts/04-part-3.ts?raw";
+import part04_4Source from "../../parts/04-part-4.ts?raw";
 
 export type ArticleMeta = {
   id: string;
@@ -102,6 +106,41 @@ export const articles: ArticleMeta[] = [
         title: "长任务 bash：run_in_background + session 池",
         summary: "child_process.spawn 跑后台进程，bash_output 轮询输出，kill_shell 关停。dev server 这种慢热服务的标准玩法",
         code: prepare(part03_4Source),
+      },
+    ],
+  },
+  {
+    id: "04-middleware",
+    title: "code-artisan 04 · 做 Agent SDK 必须支持的插件能力：8 个钩子搞定横切关注点",
+    juejinUrl: "https://juejin.cn/post/code-artisan-04",
+    parts: [
+      {
+        id: "04-part-1",
+        label: "Part 1",
+        title: "middleware 接口 + 主循环织入",
+        summary: "AgentMiddleware 4 个钩子 + 主循环 for-await 织入。挂一个 timing middleware 把机制亮一遍",
+        code: prepare(part04_1Source),
+      },
+      {
+        id: "04-part-2",
+        label: "Part 2",
+        title: "loop-detection · 自动识别死循环",
+        summary: "MD5 hash 滑动窗口 + warn / hard 两档阈值。构造永远 pending 的工具看 LLM 被拦下来",
+        code: prepare(part04_2Source),
+      },
+      {
+        id: "04-part-3",
+        label: "Part 3",
+        title: "micro-compact · 旧 tool_result 替换占位符",
+        summary: "beforeModel 里把超出 keepRecent 的 tool_result 改成占位字符串，纯本地零成本压缩",
+        code: prepare(part04_3Source),
+      },
+      {
+        id: "04-part-4",
+        label: "Part 4",
+        title: "auto-compact · 调 LLM 把整段历史压成摘要",
+        summary: "token 估算超过阈值就请 LLM 总结，messages 替换为 [summary, ack] 两条。+ onCompacted 回调留给 backend 持久化",
+        code: prepare(part04_4Source),
       },
     ],
   },

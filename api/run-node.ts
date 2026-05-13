@@ -4,6 +4,10 @@ import { demo as demo03Part1 } from "../parts/03-part-1.js";
 import { demo as demo03Part2 } from "../parts/03-part-2.js";
 import { demo as demo03Part3 } from "../parts/03-part-3.js";
 import { demo as demo03Part4 } from "../parts/03-part-4.js";
+import { demo as demo04Part1 } from "../parts/04-part-1.js";
+import { demo as demo04Part2 } from "../parts/04-part-2.js";
+import { demo as demo04Part3 } from "../parts/04-part-3.js";
+import { demo as demo04Part4 } from "../parts/04-part-4.js";
 import { checkRateLimit } from "./_lib/rate-limit.js";
 
 export const config = { runtime: "nodejs" };
@@ -15,6 +19,10 @@ const PART_RUNNERS: Record<string, Runner> = {
   "03-part-2": demo03Part2,
   "03-part-3": demo03Part3,
   "03-part-4": demo03Part4,
+  "04-part-1": demo04Part1,
+  "04-part-2": demo04Part2,
+  "04-part-3": demo04Part3,
+  "04-part-4": demo04Part4,
 };
 
 function jsonReply(res: ServerResponse, body: unknown, status = 200) {

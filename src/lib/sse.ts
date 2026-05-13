@@ -16,7 +16,7 @@ export function runPart(
   const done = (async () => {
     let resp: Response;
     try {
-      const endpoint = partId.startsWith("03-") ? "/api/run-node" : "/api/run";
+      const endpoint = partId.startsWith("02-") ? "/api/run" : "/api/run-node";
       resp = await fetch(`${endpoint}?partId=${encodeURIComponent(partId)}`, {
         method: "POST",
         signal: ac.signal,
